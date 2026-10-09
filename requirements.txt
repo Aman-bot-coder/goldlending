@@ -1,0 +1,60 @@
+# Core UI
+PySide6==6.7.2
+PySide6-Addons==6.7.2
+
+# Database
+SQLAlchemy==2.0.36
+pymysql==1.1.1
+cryptography==43.0.3
+alembic==1.14.0
+
+# SSH Tunnel
+sshtunnel==0.4.0
+paramiko==3.5.0
+
+# Security
+argon2-cffi==23.1.0
+bcrypt==4.2.0
+
+# HTTP / API
+requests==2.32.3
+httpx==0.28.1
+
+# PDF Generation
+reportlab==4.2.5
+PyPDF2==3.0.1
+
+# Excel Export
+openpyxl==3.1.5
+xlsxwriter==3.2.0
+
+# Data & Math
+python-dateutil==2.9.0
+pytz==2024.2
+babel==2.16.0
+
+# Configuration
+python-dotenv==1.0.1
+pydantic==2.10.3
+pydantic-settings==2.7.0
+
+# Image handling
+Pillow==11.0.0
+
+# Utilities
+python-slugify==8.0.4
+pyqrcode==1.2.1
+shortuuid==1.0.13
+schedule==1.2.2
+
+# Charts (PySide6 native)
+pyqtgraph==0.13.7
+
+# Testing
+pytest==8.3.4
+pytest-qt==4.4.0
+pytest-cov==6.0.0
+factory-boy==3.3.1
+
+# Packaging
+pyinstaller==6.11.1
