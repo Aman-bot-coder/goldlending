@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Optional
 
 from PySide6.QtCore import Qt, Signal, QThread, QObject, QTimer
 from PySide6.QtWidgets import (
@@ -46,6 +47,28 @@ class DBConnectWorker(QObject):
             self.error.emit(str(exc))
 
 
+class LoginWorker(QObject):
+    success = Signal(object)   # emits User object
+    error = Signal(str)
+
+    def __init__(self, username: str, password: str):
+        super().__init__()
+        self._username = username
+        self._password = password
+
+    def run(self):
+        try:
+            from app.services.auth_service import get_auth_service
+            ok, msg, user = get_auth_service().login(self._username, self._password)
+            if ok and user:
+                self.success.emit(user)
+            else:
+                self.error.emit(msg)
+        except Exception as exc:
+            logger.exception("Login worker error")
+            self.error.emit(f"Login error: {exc}")
+
+
 class LoginWindow(QDialog):
     login_successful = Signal()
 
@@ -56,6 +79,8 @@ class LoginWindow(QDialog):
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.MSWindowsFixedSizeDialogHint)
         self._thread: QThread = None
         self._worker: DBConnectWorker = None
+        self._login_thread: Optional[QThread] = None
+        self._login_worker: Optional[LoginWorker] = None
         self._setup_ui()
 
         # Auto-connect if already activated
@@ -377,33 +402,54 @@ class LoginWindow(QDialog):
             self.login_error_lbl.setText("Please enter username and password.")
             return
 
+        # Disable button to prevent double-click
+        for btn in self.findChildren(QPushButton):
+            if btn.text() == "Sign In":
+                btn.setEnabled(False)
+
         self.login_progress.setVisible(True)
         self.login_error_lbl.setText("")
-        QApplication.processEvents()
 
-        from app.services.auth_service import get_auth_service
+        self._login_thread = QThread()
+        self._login_worker = LoginWorker(username, password)
+        self._login_worker.moveToThread(self._login_thread)
+        self._login_thread.started.connect(self._login_worker.run)
+        self._login_worker.success.connect(self._on_login_success)
+        self._login_worker.error.connect(self._on_login_error)
+        self._login_thread.start()
+
+    def _on_login_success(self, user):
+        self._login_thread.quit()
+        self._login_thread.wait()
+        self.login_progress.setVisible(False)
+        for btn in self.findChildren(QPushButton):
+            if btn.text() == "Sign In":
+                btn.setEnabled(True)
+
         from app.ui.session_state import session
         from app.config import get_config
+        from app.utils.security import init_encryption
 
-        success, message, user = get_auth_service().login(username, password)
+        cfg = get_config()
+        session.login(
+            user_id=user.id,
+            username=user.username,
+            full_name=user.full_name,
+            role=user.role,
+            timeout_minutes=cfg.session_timeout_minutes,
+        )
+        init_encryption()
+        self.login_successful.emit()
+        self.accept()
 
+    def _on_login_error(self, message: str):
+        self._login_thread.quit()
+        self._login_thread.wait()
         self.login_progress.setVisible(False)
-
-        if success and user:
-            cfg = get_config()
-            session.login(
-                user_id=user.id,
-                username=user.username,
-                full_name=user.full_name,
-                role=user.role,
-                timeout_minutes=cfg.session_timeout_minutes,
-            )
-            from app.utils.security import init_encryption
-            init_encryption()
-            self.login_successful.emit()
-            self.accept()
-        else:
-            self.login_error_lbl.setText(message)
+        for btn in self.findChildren(QPushButton):
+            if btn.text() == "Sign In":
+                btn.setEnabled(True)
+        self.login_error_lbl.setText(message)
 
     def showEvent(self, event):
         super().showEvent(event)
