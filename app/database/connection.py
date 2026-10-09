@@ -25,11 +25,16 @@ _SessionFactory: Optional[scoped_session] = None
 
 
 def _build_engine(host: str, port: int):
+    from sqlalchemy.engine import URL as EngineURL
     config = get_config()
-    url = (
-        f"mysql+pymysql://{config.db_user}:{config.db_password}"
-        f"@{host}:{port}/{config.db_name}"
-        "?charset=utf8mb4"
+    url = EngineURL.create(
+        drivername="mysql+pymysql",
+        username=config.db_user,
+        password=config.db_password,
+        host=host,
+        port=port,
+        database=config.db_name,
+        query={"charset": "utf8mb4"},
     )
     return create_engine(
         url,
