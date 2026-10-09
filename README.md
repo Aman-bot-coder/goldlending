@@ -17,7 +17,7 @@ A complete, production-ready Windows desktop application for collateral-based go
 
 ### Prerequisites
 - Python 3.11+
-- MySQL server accessible at `38.159.122.193:3306` via SSH port `56022`
+- MySQL server accessible via SSH tunnel
 
 ### Setup
 ```bash
@@ -38,19 +38,15 @@ python main.py
 
 ### Database Setup (run once on server before first launch)
 ```bash
-# SSH into the server
-ssh -p 56022 root@38.159.122.193
-
-# Inside the server, run the SQL setup script
+# SSH into your server, then run:
 mysql -u root -p < setup_database.sql
 ```
 This creates the `gold_loan_db` database and all 13 tables.
 
 ### First Launch
-1. On the **Database Connection** screen, enter your SSH password for `root@38.159.122.193:56022`
-2. Enter your MySQL password
-3. Click **Connect to Database**
-4. Log in with: **admin / Admin@1234** (you will be forced to change this)
+1. On the **Database Connection** screen, enter your SSH and MySQL credentials
+2. Click **Connect to Database**
+3. Log in with: **admin / Admin@1234** (you will be forced to change this)
 
 ---
 
@@ -88,21 +84,7 @@ All configuration is stored in:
 Get a free API key at [goldapi.io](https://www.goldapi.io) and enter it in **Settings → Rate API Provider**.
 
 ### SSH / Database
-Configured via the login screen or `config.json`:
-```json
-{
-  "use_ssh_tunnel": true,
-  "ssh_host": "38.159.122.193",
-  "ssh_port": 56022,
-  "ssh_username": "root",
-  "ssh_password": "YOUR_PASSWORD",
-  "db_name": "gold_loan_db",
-  "db_user": "root",
-  "db_password": "YOUR_MYSQL_PASSWORD"
-}
-```
-
-**Never bundle passwords in the executable.** The config file is stored in AppData, not in the EXE.
+Configured via the login screen on first launch. Settings are saved to `config.json` in AppData — passwords are never bundled inside the EXE.
 
 ---
 
