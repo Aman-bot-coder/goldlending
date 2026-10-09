@@ -49,7 +49,7 @@ def init_db(ssh_password: str = "", ssh_key_path: str = "") -> None:
     with _lock:
         config = get_config()
 
-        if config.use_ssh_tunnel:
+        if config.use_ssh_tunnel and (ssh_password or ssh_key_path or config.ssh_key_path):
             try:
                 from sshtunnel import SSHTunnelForwarder
                 import paramiko

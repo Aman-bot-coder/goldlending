@@ -1,32 +1,46 @@
-"""Professional login window with SSH connection setup."""
+"""Simplified login — Activation Key + Username/Password only."""
 from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import Qt, Signal, QThread, QObject
-from PySide6.QtGui import QFont, QColor, QPalette
+from PySide6.QtCore import Qt, Signal, QThread, QObject, QTimer
 from PySide6.QtWidgets import (
     QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QFrame, QCheckBox, QMessageBox, QProgressBar,
-    QStackedWidget, QFormLayout, QGroupBox, QApplication,
+    QPushButton, QFrame, QProgressBar, QStackedWidget, QApplication,
 )
 
 logger = logging.getLogger(__name__)
+
+PAGE_ACTIVATE = 0
+PAGE_CONNECTING = 1
+PAGE_LOGIN = 2
 
 
 class DBConnectWorker(QObject):
     success = Signal()
     error = Signal(str)
 
-    def __init__(self, ssh_password: str = "", ssh_key: str = ""):
+    def __init__(self, host: str, port: int, user: str, password: str, db: str):
         super().__init__()
-        self._ssh_password = ssh_password
-        self._ssh_key = ssh_key
+        self._host = host
+        self._port = port
+        self._user = user
+        self._password = password
+        self._db = db
 
     def run(self):
         try:
+            from app.config import get_config
+            get_config().update({
+                "use_ssh_tunnel": False,
+                "db_host": self._host,
+                "db_port": self._port,
+                "db_user": self._user,
+                "db_password": self._password,
+                "db_name": self._db,
+            })
             from app.database.connection import init_db
-            init_db(ssh_password=self._ssh_password, ssh_key_path=self._ssh_key)
+            init_db()
             self.success.emit()
         except Exception as exc:
             self.error.emit(str(exc))
@@ -37,13 +51,18 @@ class LoginWindow(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Gold & Silver Loan Management System — Login")
-        self.setFixedSize(900, 580)
+        self.setWindowTitle("Gold & Silver Loan Management System")
+        self.setFixedSize(900, 560)
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.MSWindowsFixedSizeDialogHint)
-        self._db_connected = False
         self._thread: QThread = None
         self._worker: DBConnectWorker = None
         self._setup_ui()
+
+        # Auto-connect if already activated
+        from app.config import get_config
+        cfg = get_config()
+        if cfg.db_host and cfg.db_password and not cfg.use_ssh_tunnel:
+            QTimer.singleShot(200, self._auto_connect)
 
     def _setup_ui(self):
         main_layout = QHBoxLayout(self)
@@ -101,7 +120,7 @@ class LoginWindow(QDialog):
 
         main_layout.addWidget(left)
 
-        # Right panel — stacked: DB setup → login
+        # Right panel — stacked: DB setup (0) → auto-connecting (1) → login (2)
         right = QFrame()
         right.setStyleSheet("background-color: #F8F9FA;")
         right_layout = QVBoxLayout(right)
@@ -111,94 +130,137 @@ class LoginWindow(QDialog):
         self.stack = QStackedWidget()
         right_layout.addWidget(self.stack)
 
-        self._build_db_page()
-        self._build_login_page()
+        self._build_activate_page()   # index 0 — Activation Key (first time)
+        self._build_connecting_page() # index 1 — Connecting spinner
+        self._build_login_page()      # index 2 — Username/Password
 
         main_layout.addWidget(right)
 
-    # -------- DB connection page --------
-    def _build_db_page(self):
+    # -------- Page 0: Activation Key --------
+    def _build_activate_page(self):
         page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setSpacing(16)
+        lay = QVBoxLayout(page)
+        lay.setSpacing(16)
 
-        title = QLabel("Database Connection")
-        title.setStyleSheet("font-size: 20px; font-weight: 700; color: #1A1A2E;")
-        layout.addWidget(title)
-        subtitle = QLabel("Configure SSH tunnel and MySQL connection settings")
-        subtitle.setStyleSheet("font-size: 12px; color: #666;")
-        layout.addWidget(subtitle)
-        layout.addSpacing(8)
+        h = QLabel("Activate Your Account")
+        h.setStyleSheet("font-size: 22px; font-weight: 800; color: #1A1A2E;")
+        lay.addWidget(h)
+        sub = QLabel("Enter the details provided by your administrator")
+        sub.setStyleSheet("font-size: 12px; color: #888;")
+        lay.addWidget(sub)
+        lay.addSpacing(8)
 
-        grp = QGroupBox("SSH Tunnel Settings")
-        grp.setStyleSheet("QGroupBox { font-weight: 700; } QGroupBox::title { color: #1A1A2E; }")
-        form = QFormLayout(grp)
-        form.setSpacing(10)
+        lay.addWidget(self._field_label("Business / Company Name"))
+        self.business_input = QLineEdit()
+        self.business_input.setPlaceholderText("e.g. Sharma Gold Lending")
+        self.business_input.setFixedHeight(42)
+        lay.addWidget(self.business_input)
 
-        from app.config import get_config
-        cfg = get_config()
+        lay.addWidget(self._field_label("Activation Key"))
+        self.act_key_input = QLineEdit()
+        self.act_key_input.setPlaceholderText("Paste your activation key here")
+        self.act_key_input.setFixedHeight(42)
+        self.act_key_input.returnPressed.connect(self._do_activate)
+        lay.addWidget(self.act_key_input)
 
-        self.ssh_host = QLineEdit(cfg.ssh_host)
-        self.ssh_port = QLineEdit(str(cfg.ssh_port))
-        self.ssh_user = QLineEdit(cfg.ssh_username)
-        self.ssh_pass = QLineEdit()
-        self.ssh_pass.setEchoMode(QLineEdit.EchoMode.Password)
-        self.ssh_pass.setPlaceholderText("SSH password or leave blank for key auth")
-        self.db_name = QLineEdit(cfg.db_name)
-        self.db_user = QLineEdit(cfg.db_user)
-        self.db_pass = QLineEdit()
-        self.db_pass.setEchoMode(QLineEdit.EchoMode.Password)
-        self.db_pass.setPlaceholderText("MySQL password")
+        self.act_error = QLabel("")
+        self.act_error.setStyleSheet("color: #DC3545; font-size: 12px;")
+        self.act_error.setWordWrap(True)
+        lay.addWidget(self.act_error)
 
-        form.addRow("SSH Host:", self.ssh_host)
-        form.addRow("SSH Port:", self.ssh_port)
-        form.addRow("SSH User:", self.ssh_user)
-        form.addRow("SSH Password:", self.ssh_pass)
-        form.addRow("Database Name:", self.db_name)
-        form.addRow("DB User:", self.db_user)
-        form.addRow("DB Password:", self.db_pass)
-        layout.addWidget(grp)
+        btn = QPushButton("Activate & Connect")
+        btn.setFixedHeight(44)
+        btn.setStyleSheet("font-size: 15px; font-weight: 700;")
+        btn.clicked.connect(self._do_activate)
+        lay.addWidget(btn)
 
-        self.db_progress = QProgressBar()
-        self.db_progress.setRange(0, 0)
-        self.db_progress.setVisible(False)
-        self.db_progress.setFixedHeight(6)
-        layout.addWidget(self.db_progress)
+        lay.addStretch()
+        note = QLabel("Contact your administrator if you don't have an activation key.")
+        note.setStyleSheet("color: #AAA; font-size: 11px;")
+        note.setWordWrap(True)
+        note.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lay.addWidget(note)
 
-        self.db_status_lbl = QLabel("")
-        self.db_status_lbl.setStyleSheet("color: #DC3545; font-size: 12px;")
-        self.db_status_lbl.setWordWrap(True)
-        layout.addWidget(self.db_status_lbl)
-
-        connect_btn = QPushButton("Connect to Database")
-        connect_btn.setFixedHeight(40)
-        connect_btn.clicked.connect(self._do_connect)
-        layout.addWidget(connect_btn)
-
-        layout.addStretch()
         self.stack.addWidget(page)
 
-    def _do_connect(self):
+    def _do_activate(self):
+        from app.utils.activation import decode_activation_key
+        from app.config import get_config
+
+        biz = self.business_input.text().strip()
+        key = self.act_key_input.text().strip()
+
+        if not biz:
+            self.act_error.setText("Please enter your business name.")
+            return
+        if not key:
+            self.act_error.setText("Please enter your activation key.")
+            return
+
+        try:
+            creds = decode_activation_key(key)
+        except ValueError as e:
+            self.act_error.setText(str(e))
+            return
+
+        self.act_error.setText("")
+        get_config().set("business_name", biz)
+        self.stack.setCurrentIndex(PAGE_CONNECTING)
+        self._start_connect(creds)
+
+    # -------- Page 1: Connecting --------
+    def _build_connecting_page(self):
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lay.setSpacing(20)
+
+        icon = QLabel("⚜")
+        icon.setStyleSheet("font-size: 48px; color: #FFD700;")
+        icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lay.addWidget(icon)
+
+        self.conn_label = QLabel("Connecting...")
+        self.conn_label.setStyleSheet("font-size: 16px; font-weight: 600; color: #1A1A2E;")
+        self.conn_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lay.addWidget(self.conn_label)
+
+        bar = QProgressBar()
+        bar.setRange(0, 0)
+        bar.setFixedHeight(6)
+        bar.setFixedWidth(260)
+        lay.addWidget(bar, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        retry = QPushButton("Re-enter Activation Key")
+        retry.setObjectName("SecondaryBtn")
+        retry.setFixedWidth(220)
+        retry.clicked.connect(self._reset_activation)
+        lay.addWidget(retry, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        self.stack.addWidget(page)
+
+    def _reset_activation(self):
+        from app.config import get_config
+        get_config().update({"db_password": "", "db_host": ""})
+        self.act_error.setText("")
+        self.stack.setCurrentIndex(PAGE_ACTIVATE)
+
+    def _auto_connect(self):
         from app.config import get_config
         cfg = get_config()
-        # Save updated settings
-        cfg.update({
-            "ssh_host": self.ssh_host.text().strip(),
-            "ssh_port": int(self.ssh_port.text().strip() or "56022"),
-            "ssh_username": self.ssh_user.text().strip(),
-            "db_name": self.db_name.text().strip(),
-            "db_user": self.db_user.text().strip(),
-            "db_password": self.db_pass.text(),
+        self.stack.setCurrentIndex(PAGE_CONNECTING)
+        self._start_connect({
+            "db_host": cfg.db_host, "db_port": cfg.db_port,
+            "db_user": cfg.db_user, "db_password": cfg.db_password,
+            "db_name": cfg.db_name,
         })
 
-        self.db_progress.setVisible(True)
-        self.db_status_lbl.setText("Connecting...")
-        self.db_status_lbl.setStyleSheet("color: #0056B3; font-size: 12px;")
-
+    def _start_connect(self, creds: dict):
         self._thread = QThread()
         self._worker = DBConnectWorker(
-            ssh_password=self.ssh_pass.text(),
-            ssh_key="",
+            host=creds["db_host"], port=int(creds.get("db_port", 3306)),
+            user=creds["db_user"], password=creds["db_password"],
+            db=creds["db_name"],
         )
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
@@ -209,21 +271,16 @@ class LoginWindow(QDialog):
     def _on_db_success(self):
         self._thread.quit()
         self._thread.wait()
-        self.db_progress.setVisible(False)
-        self._db_connected = True
-        # Seed first admin if needed
         self._ensure_admin()
-        self.stack.setCurrentIndex(1)
+        self.stack.setCurrentIndex(PAGE_LOGIN)
 
     def _on_db_error(self, msg: str):
         self._thread.quit()
         self._thread.wait()
-        self.db_progress.setVisible(False)
-        self.db_status_lbl.setText(f"Connection failed: {msg}")
-        self.db_status_lbl.setStyleSheet("color: #DC3545; font-size: 12px;")
+        self.conn_label.setText(f"Failed: {msg[:80]}")
+        self.stack.setCurrentIndex(PAGE_CONNECTING)
 
     def _ensure_admin(self):
-        """Create default admin account if no users exist."""
         try:
             from app.database.connection import get_session
             from app.models.user import User
@@ -259,14 +316,12 @@ class LoginWindow(QDialog):
         layout.addWidget(subtitle)
         layout.addSpacing(16)
 
-        # Username
         layout.addWidget(QLabel("Username / Email"))
         self.username_input = QLineEdit()
         self.username_input.setPlaceholderText("Enter username or email")
         self.username_input.setFixedHeight(40)
         layout.addWidget(self.username_input)
 
-        # Password
         layout.addWidget(QLabel("Password"))
         pw_row = QHBoxLayout()
         self.password_input = QLineEdit()
@@ -300,18 +355,19 @@ class LoginWindow(QDialog):
         login_btn.clicked.connect(self._do_login)
         layout.addWidget(login_btn)
 
-        db_settings_btn = QPushButton("Change Database Settings")
-        db_settings_btn.setObjectName("SecondaryBtn")
-        db_settings_btn.clicked.connect(lambda: self.stack.setCurrentIndex(0))
-        layout.addWidget(db_settings_btn)
+        change_key_btn = QPushButton("Use Different Activation Key")
+        change_key_btn.setObjectName("SecondaryBtn")
+        change_key_btn.clicked.connect(self._reset_activation)
+        layout.addWidget(change_key_btn)
 
         layout.addStretch()
-        hint = QLabel("Default: admin / Admin@1234  (change on first login)")
-        hint.setStyleSheet("color: #AAA; font-size: 11px;")
-        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(hint)
-
         self.stack.addWidget(page)
+
+    @staticmethod
+    def _field_label(text: str) -> QLabel:
+        lbl = QLabel(text)
+        lbl.setStyleSheet("font-size: 13px; font-weight: 600; color: #333;")
+        return lbl
 
     def _do_login(self):
         username = self.username_input.text().strip()
@@ -351,6 +407,3 @@ class LoginWindow(QDialog):
 
     def showEvent(self, event):
         super().showEvent(event)
-        # If DB already connected (e.g. relogin), skip to login page
-        if self._db_connected:
-            self.stack.setCurrentIndex(1)
