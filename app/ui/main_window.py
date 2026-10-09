@@ -186,6 +186,9 @@ class MainWindow(QMainWindow):
         from app.ui.pages.settings_page import SettingsPage
         from app.ui.pages.audit_page import AuditPage
         from app.ui.pages.users_page import UsersPage
+        from app.ui.pages.repayments_page import RepaymentsPage
+        from app.ui.pages.collateral_page import CollateralPage
+        from app.ui.pages.backup_page import BackupPage
 
         page_map = {
             "dashboard": DashboardPage,
@@ -196,6 +199,9 @@ class MainWindow(QMainWindow):
             "settings": SettingsPage,
             "audit": AuditPage,
             "users": UsersPage,
+            "repayments": RepaymentsPage,
+            "collateral": CollateralPage,
+            "backup": BackupPage,
         }
 
         for key, Page in page_map.items():
@@ -225,6 +231,17 @@ class MainWindow(QMainWindow):
     def _navigate(self, page_key: str):
         if page_key not in self._pages:
             return
+
+        # "New Loan" opens the dialog directly then stays on loans page
+        if page_key == "new_loan":
+            from app.ui.dialogs.loan_dialog import LoanDialog
+            dlg = LoanDialog(parent=self)
+            if dlg.exec():
+                # Refresh loans list if it's loaded
+                if "loans" in self._pages and hasattr(self._pages["loans"], "refresh"):
+                    self._pages["loans"].refresh()
+            # Navigate to loans list after dialog closes
+            page_key = "loans"
 
         # Check permission
         restricted = {"users": "manage_users", "audit": "view_audit_logs",
