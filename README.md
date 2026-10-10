@@ -3,21 +3,21 @@
 A complete, production-ready Windows desktop application for collateral-based gold and silver lending businesses in India.
 
 ## Features
-- Live gold/silver rate integration (goldapi.io)
+- Works 100% offline — local database created automatically on first launch
+- Manual daily gold/silver rate entry (optional live rates via goldapi.io when online)
 - Complete loan origination → disbursement → repayment lifecycle
 - Customer onboarding with encrypted KYC
 - Role-based access (Admin / Lender / Viewer)
 - PDF receipts and Excel reports
 - Automatic session timeout & audit logs
-- MySQL database via SSH tunnel
+- Local SQLite database with daily automatic backups
 
 ---
 
 ## Installation (Development)
 
 ### Prerequisites
-- Python 3.11+
-- MySQL server accessible via SSH tunnel
+- Python 3.11+ (no database server needed)
 
 ### Setup
 ```bash
@@ -36,17 +36,10 @@ pip install -r requirements.txt
 python main.py
 ```
 
-### Database Setup (run once on server before first launch)
-```bash
-# SSH into your server, then run:
-mysql -u root -p < setup_database.sql
-```
-This creates the `gold_loan_db` database and all 13 tables.
-
 ### First Launch
-1. On the **Database Connection** screen, enter your SSH and MySQL credentials
-2. Click **Connect to Database**
-3. Log in with: **admin / Admin@1234** (you will be forced to change this)
+1. Run the app — the database is created automatically in `%APPDATA%\GoldSilverLoan\database\gold_loan.db`
+2. Log in with **admin / Admin@1234** — you will be asked to set your own password
+3. Go to **Gold & Silver Rates** and enter today's rate (₹ per gram)
 
 ---
 
@@ -80,11 +73,13 @@ All configuration is stored in:
 - **Windows**: `%APPDATA%\GoldSilverLoan\config.json`
 - **macOS/Linux (dev)**: `~/.goldsilverl​oan/config.json`
 
-### Rate API
-Get a free API key at [goldapi.io](https://www.goldapi.io) and enter it in **Settings → Rate API Provider**.
+### Rates
+Enter daily rates on the **Gold & Silver Rates** page. Optionally, when online, add a goldapi.io key in **Settings → Live Rates API** to fetch live rates.
 
-### SSH / Database
-Configured via the login screen on first launch. Settings are saved to `config.json` in AppData — passwords are never bundled inside the EXE.
+### Data & Backups
+- Database: `%APPDATA%\GoldSilverLoan\database\gold_loan.db`
+- Automatic daily backups (last 10 kept): `%APPDATA%\GoldSilverLoan\backups\`
+- Manual export/restore: **Backup & Restore** page
 
 ---
 
@@ -128,7 +123,7 @@ pytest tests/ -v --tb=short
 gold_silver_loan/
 ├── app/
 │   ├── config.py           # Configuration management
-│   ├── database/           # SQLAlchemy connection + base
+│   ├── database/           # Local SQLite connection, backups
 │   ├── models/             # ORM models (all tables)
 │   ├── services/           # Business logic layer
 │   ├── api/                # Metal rate API providers

@@ -14,11 +14,9 @@ datas = [
 
 # Hidden imports for SQLAlchemy dialects, PySide6, etc.
 hidden_imports = [
-    'sqlalchemy.dialects.mysql',
-    'sqlalchemy.dialects.mysql.pymysql',
-    'pymysql',
-    'paramiko',
-    'sshtunnel',
+    'sqlalchemy.dialects.sqlite',
+    'sqlalchemy.dialects.sqlite.pysqlite',
+    'sqlite3',
     'argon2',
     'argon2._utils',
     'argon2.low_level',

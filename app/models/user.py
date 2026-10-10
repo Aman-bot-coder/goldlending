@@ -61,7 +61,7 @@ class LoginHistory(Base):
         Integer, ForeignKey("users.id"), nullable=True
     )
     username: Mapped[str] = mapped_column(String(50), nullable=False)
-    login_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    login_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, server_default=func.now(), nullable=False)
     logout_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
     success: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

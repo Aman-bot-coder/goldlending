@@ -4,13 +4,8 @@ PySide6-Addons==6.7.2
 
 # Database
 SQLAlchemy==2.0.36
-pymysql==1.1.1
 cryptography==43.0.3
 alembic==1.14.0
-
-# SSH Tunnel
-sshtunnel==0.4.0
-paramiko==3.5.0
 
 # Security
 argon2-cffi==23.1.0

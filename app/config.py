@@ -34,19 +34,6 @@ for _d in [_BASE_DIR, DB_DIR, BACKUP_DIR, UPLOAD_DIR, LOG_DIR]:
     _d.mkdir(parents=True, exist_ok=True)
 
 _DEFAULT_CONFIG: dict = {
-    # SSH Tunnel
-    "use_ssh_tunnel": True,
-    "ssh_host": "38.159.122.193",
-    "ssh_port": 56022,
-    "ssh_username": "root",
-    "ssh_password": "",
-    "ssh_key_path": "",
-    # MySQL
-    "db_host": "127.0.0.1",
-    "db_port": 3306,
-    "db_name": "gold_loan_db",
-    "db_user": "root",
-    "db_password": "",
     # Application
     "debug_sql": False,
     "session_timeout_minutes": 30,
@@ -114,50 +101,6 @@ class AppConfig:
         self.save()
 
     # --- Convenience properties ---
-    @property
-    def use_ssh_tunnel(self) -> bool:
-        return bool(self._data.get("use_ssh_tunnel", True))
-
-    @property
-    def ssh_host(self) -> str:
-        return self._data.get("ssh_host", "38.159.122.193")
-
-    @property
-    def ssh_port(self) -> int:
-        return int(self._data.get("ssh_port", 56022))
-
-    @property
-    def ssh_username(self) -> str:
-        return self._data.get("ssh_username", "root")
-
-    @property
-    def ssh_password(self) -> str:
-        return self._data.get("ssh_password", "")
-
-    @property
-    def ssh_key_path(self) -> str:
-        return self._data.get("ssh_key_path", "")
-
-    @property
-    def db_host(self) -> str:
-        return self._data.get("db_host", "127.0.0.1")
-
-    @property
-    def db_port(self) -> int:
-        return int(self._data.get("db_port", 3306))
-
-    @property
-    def db_name(self) -> str:
-        return self._data.get("db_name", "gold_loan_db")
-
-    @property
-    def db_user(self) -> str:
-        return self._data.get("db_user", "root")
-
-    @property
-    def db_password(self) -> str:
-        return self._data.get("db_password", "")
-
     @property
     def debug_sql(self) -> bool:
         return bool(self._data.get("debug_sql", False))

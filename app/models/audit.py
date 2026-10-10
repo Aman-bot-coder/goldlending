@@ -27,7 +27,7 @@ class AuditLog(Base):
     ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
     extra: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), nullable=False, index=True
+        DateTime, default=datetime.now, server_default=func.now(), nullable=False, index=True
     )
 
     def __repr__(self) -> str:

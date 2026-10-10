@@ -62,5 +62,5 @@ class InterestAccrual(Base):
     interest_accrued: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
     cumulative_interest: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), nullable=False
+        DateTime, default=datetime.now, server_default=func.now(), nullable=False
     )

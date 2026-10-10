@@ -49,20 +49,38 @@ def main():
 
     load_stylesheet(app)
 
-    def show_login():
+    from PySide6.QtWidgets import QDialog
+    from app.database.connection import close_db, auto_backup_if_due
+
+    app.aboutToQuit.connect(close_db)
+    windows: dict = {}
+
+    def show_login() -> bool:
         from app.ui.login_window import LoginWindow
+        from app.ui.main_window import MainWindow
+
         login_win = LoginWindow()
+        if login_win.exec() != QDialog.DialogCode.Accepted:
+            return False
 
-        def on_login_success():
-            from app.ui.main_window import MainWindow
-            main_win = MainWindow()
-            main_win.logout_requested.connect(show_login)
-            main_win.show()
+        try:
+            auto_backup_if_due()
+        except Exception:
+            logger.exception("Automatic backup failed")
 
-        login_win.login_successful.connect(on_login_success)
-        login_win.exec()
+        main_win = MainWindow()
+        main_win.logout_requested.connect(on_logout)
+        windows["main"] = main_win
+        main_win.show()
+        return True
 
-    show_login()
+    def on_logout():
+        if not show_login():
+            app.quit()
+
+    if not show_login():
+        close_db()
+        sys.exit(0)
     sys.exit(app.exec())
 
 

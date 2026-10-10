@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QGroupBox, QTableWidget, QTableWidgetItem,
-    QHeaderView, QMessageBox,
+    QHeaderView, QMessageBox, QDoubleSpinBox,
 )
 
 from app.utils.formatters import fmt_currency, fmt_datetime
@@ -24,7 +24,7 @@ class RatesPage(QWidget):
         layout.setContentsMargins(24, 24, 24, 24)
 
         header = QHBoxLayout()
-        title = QLabel("Live Gold & Silver Rates")
+        title = QLabel("Gold & Silver Rates")
         title.setObjectName("SectionTitle")
         header.addWidget(title)
         header.addStretch()
@@ -90,13 +90,38 @@ class RatesPage(QWidget):
             "⚠  Rates shown are indicative market reference prices only.\n"
             "Actual lender valuation rates may differ and must be set by the lender.\n"
             "These prices do not constitute a price offer or guarantee.\n\n"
-            "Configure your API key in Settings → Rate API Provider."
+            "Offline: enter today's rate below and click Save.\n"
+            "Online (optional): add a goldapi.io key in Settings to fetch live rates."
         )
         n.setWordWrap(True)
         n.setStyleSheet("color: #856404; font-size: 12px;")
         notice_layout.addWidget(n)
         rates_row.addWidget(notice, 1)
         layout.addLayout(rates_row)
+
+        # Manual entry (works without internet)
+        manual_grp = QGroupBox("Enter Today's Rate Manually (₹ per gram, 24K gold / 999 silver)")
+        manual_row = QHBoxLayout(manual_grp)
+        manual_row.setSpacing(12)
+        manual_row.addWidget(QLabel("🥇 Gold ₹/g:"))
+        self.manual_gold = QDoubleSpinBox()
+        self.manual_gold.setRange(0, 1_000_000)
+        self.manual_gold.setDecimals(2)
+        self.manual_gold.setFixedWidth(150)
+        manual_row.addWidget(self.manual_gold)
+        manual_row.addSpacing(12)
+        manual_row.addWidget(QLabel("🥈 Silver ₹/g:"))
+        self.manual_silver = QDoubleSpinBox()
+        self.manual_silver.setRange(0, 100_000)
+        self.manual_silver.setDecimals(2)
+        self.manual_silver.setFixedWidth(150)
+        manual_row.addWidget(self.manual_silver)
+        manual_row.addStretch()
+        save_manual_btn = QPushButton("💾 Save Rates")
+        save_manual_btn.setFixedHeight(36)
+        save_manual_btn.clicked.connect(self._save_manual)
+        manual_row.addWidget(save_manual_btn)
+        layout.addWidget(manual_grp)
 
         # Rate history table
         history_lbl = QLabel("Rate History (Gold)")
@@ -112,6 +137,26 @@ class RatesPage(QWidget):
         self.history_table.setEditTriggers(self.history_table.EditTrigger.NoEditTriggers)
         self.history_table.setAlternatingRowColors(True)
         layout.addWidget(self.history_table)
+
+    def _save_manual(self):
+        from decimal import Decimal
+        from app.services.rate_service import get_rate_service
+        gold = self.manual_gold.value()
+        silver = self.manual_silver.value()
+        if gold <= 0 and silver <= 0:
+            QMessageBox.warning(self, "Enter Rate", "Enter a gold and/or silver rate greater than zero.")
+            return
+        svc = get_rate_service()
+        try:
+            if gold > 0:
+                svc.save_manual_rate("gold", Decimal(str(gold)))
+            if silver > 0:
+                svc.save_manual_rate("silver", Decimal(str(silver)))
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"Could not save rates: {exc}")
+            return
+        self.status_lbl.setText("Manual rates saved")
+        self._display_rates()
 
     def _fetch_rates(self):
         self.status_lbl.setText("Fetching rates...")
@@ -133,7 +178,10 @@ class RatesPage(QWidget):
             self.gold_gram.setText(f"₹ {float(gold['rate_per_gram']):,.2f}")
             self.gold_10gram.setText(f"per 10g: ₹ {float(gold['rate_per_10gram']):,.2f}")
             stale = gold.get("is_stale", False)
-            self.gold_freshness.setText("⚠ Stale Rate" if stale else "● Live Rate")
+            label = "Manual Rate" if gold.get("source") == "manual" else "Live Rate"
+            self.gold_freshness.setText(f"⚠ Old {label}" if stale else f"● {label}")
+            if self.manual_gold.value() == 0:
+                self.manual_gold.setValue(float(gold['rate_per_gram']))
             self.gold_freshness.setStyleSheet(
                 "font-size: 12px; color: #DC3545;" if stale else "font-size: 12px; color: #28A745;"
             )
@@ -143,7 +191,10 @@ class RatesPage(QWidget):
             self.silver_gram.setText(f"₹ {float(silver['rate_per_gram']):,.2f}")
             self.silver_10gram.setText(f"per 10g: ₹ {float(silver['rate_per_10gram']):,.2f}")
             stale = silver.get("is_stale", False)
-            self.silver_freshness.setText("⚠ Stale Rate" if stale else "● Live Rate")
+            label = "Manual Rate" if silver.get("source") == "manual" else "Live Rate"
+            self.silver_freshness.setText(f"⚠ Old {label}" if stale else f"● {label}")
+            if self.manual_silver.value() == 0:
+                self.manual_silver.setValue(float(silver['rate_per_gram']))
             self.silver_freshness.setStyleSheet(
                 "font-size: 12px; color: #DC3545;" if stale else "font-size: 12px; color: #28A745;"
             )
@@ -157,14 +208,15 @@ class RatesPage(QWidget):
             self.history_table.setItem(i, 1, QTableWidgetItem(f"₹ {float(row['rate_per_gram']):,.2f}"))
             self.history_table.setItem(i, 2, QTableWidgetItem(f"₹ {float(row['rate_per_10gram']):,.2f}"))
             self.history_table.setItem(i, 3, QTableWidgetItem(row["source"]))
-            self.history_table.setItem(i, 4, QTableWidgetItem("Stale" if row["is_stale"] else "Live"))
+            self.history_table.setItem(i, 4, QTableWidgetItem("Stale" if row["is_stale"] else "OK"))
 
     def showEvent(self, event):
         super().showEvent(event)
         self._display_rates()
         from app.config import get_config
-        interval = get_config().rate_refresh_interval_minutes * 60 * 1000
-        self._auto_refresh.start(interval)
+        cfg = get_config()
+        if cfg.rate_api_key:
+            self._auto_refresh.start(cfg.rate_refresh_interval_minutes * 60 * 1000)
 
     def hideEvent(self, event):
         super().hideEvent(event)

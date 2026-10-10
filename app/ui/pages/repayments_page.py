@@ -44,7 +44,7 @@ class RepaymentsPage(QWidget):
         filter_row.setSpacing(12)
         filter_row.addWidget(QLabel("Mode:"))
         self.mode_filter = QComboBox()
-        self.mode_filter.addItems(["All", "cash", "upi", "bank_transfer", "cheque", "demand_draft"])
+        self.mode_filter.addItems(["All", "cash", "upi", "bank_transfer", "cheque", "other"])
         self.mode_filter.setFixedWidth(140)
         self.mode_filter.currentIndexChanged.connect(self.refresh)
         filter_row.addWidget(self.mode_filter)
@@ -86,7 +86,7 @@ class RepaymentsPage(QWidget):
                     session.query(Repayment, Loan, Customer, User)
                     .join(Loan, Repayment.loan_id == Loan.id)
                     .join(Customer, Loan.customer_id == Customer.id)
-                    .outerjoin(User, Repayment.collected_by == User.id)
+                    .outerjoin(User, Repayment.created_by == User.id)
                     .filter(Repayment.is_reversed == False)
                 )
                 if mode != "All":

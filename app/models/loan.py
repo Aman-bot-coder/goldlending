@@ -105,6 +105,6 @@ class LoanStatusHistory(Base):
     to_status: Mapped[str] = mapped_column(String(30), nullable=False)
     changed_by: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    changed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    changed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, server_default=func.now(), nullable=False)
 
     loan: Mapped["Loan"] = relationship("Loan", back_populates="status_history")

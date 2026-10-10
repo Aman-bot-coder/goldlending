@@ -25,7 +25,7 @@ class MetalRateHistory(Base):
     is_stale: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     fetched_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), nullable=False
+        DateTime, default=datetime.now, server_default=func.now(), nullable=False
     )
 
     def __repr__(self) -> str:

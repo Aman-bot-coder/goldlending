@@ -238,8 +238,8 @@ class MainWindow(QMainWindow):
             dlg = LoanDialog(parent=self)
             if dlg.exec():
                 # Refresh loans list if it's loaded
-                if "loans" in self._pages and hasattr(self._pages["loans"], "refresh"):
-                    self._pages["loans"].refresh()
+                if "loans" in self._pages and hasattr(self._pages["loans"], "load_data"):
+                    self._pages["loans"].load_data()
             # Navigate to loans list after dialog closes
             page_key = "loans"
 

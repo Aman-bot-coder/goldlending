@@ -160,16 +160,15 @@ class LoanService:
             net_weight, purity, metal_type, valuation_rate, rate_already_purity_adjusted
         )
 
-        purity_value_map = {"24K": Decimal("1.0"), "22K": Decimal("22/24"),
-                            "20K": Decimal("20/24"), "18K": Decimal("18/24")}
-        try:
-            purity_val = purity_value_map.get(purity.upper())
-            if purity_val is None:
-                purity_val = Decimal(purity.replace("K", "")) / Decimal("24")
-        except Exception:
-            purity_val = None
+        purity_val, _ = calculate_collateral_value(
+            Decimal("1"), purity, metal_type, Decimal("1")
+        )
 
         with get_session() as session:
+            if tag_number and session.query(CollateralItem).filter(
+                CollateralItem.tag_number == tag_number
+            ).first():
+                return False, f"Tag number '{tag_number}' is already in use", None
             item = CollateralItem(
                 loan_id=loan_id,
                 metal_type=metal_type,

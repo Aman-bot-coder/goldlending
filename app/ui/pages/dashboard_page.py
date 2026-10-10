@@ -83,7 +83,7 @@ class DashboardPage(QWidget):
         rates_layout.setSpacing(24)
 
         gold_col = QVBoxLayout()
-        gold_lbl = QLabel("🥇 Live Gold Rate (24K)")
+        gold_lbl = QLabel("🥇 Gold Rate (24K)")
         gold_lbl.setStyleSheet("font-weight: 700; color: #B8860B;")
         self.gold_rate_lbl = QLabel("₹ —")
         self.gold_rate_lbl.setStyleSheet("font-size: 22px; font-weight: 800; color: #FFD700;")
@@ -97,7 +97,7 @@ class DashboardPage(QWidget):
         gold_col.addWidget(self.gold_rate_freshness)
 
         silver_col = QVBoxLayout()
-        silver_lbl = QLabel("🥈 Live Silver Rate (999)")
+        silver_lbl = QLabel("🥈 Silver Rate (999)")
         silver_lbl.setStyleSheet("font-weight: 700; color: #808080;")
         self.silver_rate_lbl = QLabel("₹ —")
         self.silver_rate_lbl.setStyleSheet("font-size: 22px; font-weight: 800; color: #C0C0C0;")
@@ -165,7 +165,8 @@ class DashboardPage(QWidget):
                 self.gold_rate_lbl.setText(f"₹ {gold['rate_per_gram']:,.2f}")
                 self.gold_rate_per10_lbl.setText(f"per 10g: ₹ {gold['rate_per_10gram']:,.2f}")
                 stale = gold.get("is_stale", False)
-                self.gold_rate_freshness.setText("⚠ Stale rate" if stale else "● Live")
+                kind = "Manual" if gold.get("source") == "manual" else "Live"
+                self.gold_rate_freshness.setText(f"⚠ Old {kind.lower()} rate" if stale else f"● {kind}")
                 self.gold_rate_freshness.setStyleSheet(
                     "color: #DC3545; font-size: 11px;" if stale else "color: #28A745; font-size: 11px;"
                 )
@@ -173,7 +174,8 @@ class DashboardPage(QWidget):
                 self.silver_rate_lbl.setText(f"₹ {silver['rate_per_gram']:,.2f}")
                 self.silver_rate_per10_lbl.setText(f"per 10g: ₹ {silver['rate_per_10gram']:,.2f}")
                 stale = silver.get("is_stale", False)
-                self.silver_rate_freshness.setText("⚠ Stale rate" if stale else "● Live")
+                kind = "Manual" if silver.get("source") == "manual" else "Live"
+                self.silver_rate_freshness.setText(f"⚠ Old {kind.lower()} rate" if stale else f"● {kind}")
                 self.silver_rate_freshness.setStyleSheet(
                     "color: #DC3545; font-size: 11px;" if stale else "color: #28A745; font-size: 11px;"
                 )

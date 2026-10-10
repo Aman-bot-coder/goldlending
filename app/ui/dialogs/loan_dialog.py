@@ -320,9 +320,9 @@ class LoanDialog(QDialog):
             QMessageBox.warning(self, "Error", msg)
             return
 
-        # Save collateral items
+        failures = []
         for item in self._collateral_rows:
-            svc.add_collateral(
+            ok_item, item_msg, _ = svc.add_collateral(
                 loan_id=loan_id,
                 metal_type=item["metal_type"],
                 item_category=item["item_category"],
@@ -335,6 +335,15 @@ class LoanDialog(QDialog):
                 description=item.get("description", ""),
                 storage_location=item.get("storage_location", ""),
             )
+            if not ok_item:
+                failures.append(f"{item['metal_type']} {item['item_category']}: {item_msg}")
 
-        QMessageBox.information(self, "Success", msg)
+        if failures:
+            QMessageBox.warning(
+                self, "Loan Created — Some Items Not Saved",
+                f"{msg}\n\nThese collateral items were not saved:\n" + "\n".join(failures)
+                + "\n\nOpen the loan to review.",
+            )
+        else:
+            QMessageBox.information(self, "Success", msg)
         self.accept()

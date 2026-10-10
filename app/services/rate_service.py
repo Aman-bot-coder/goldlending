@@ -17,6 +17,7 @@ from app.models.metal_rate import MetalRateHistory
 logger = logging.getLogger(__name__)
 
 STALE_THRESHOLD_MINUTES = 60
+MANUAL_STALE_THRESHOLD_HOURS = 24
 
 
 def _get_provider():
@@ -34,8 +35,30 @@ def _get_provider():
 
 class RateService:
 
+    def save_manual_rate(self, metal_type: str, rate_per_gram: Decimal) -> None:
+        """Record a rate typed in by the lender (works without internet)."""
+        if metal_type not in ("gold", "silver"):
+            raise ValueError("metal_type must be 'gold' or 'silver'")
+        rate = Decimal(str(rate_per_gram)).quantize(Decimal("0.01"))
+        if rate <= 0:
+            raise ValueError("Rate must be greater than zero")
+        with get_session() as session:
+            session.add(MetalRateHistory(
+                metal_type=metal_type,
+                rate_per_gram=rate,
+                rate_per_10gram=rate * Decimal("10"),
+                currency="INR",
+                source="manual",
+                purity_basis="24K" if metal_type == "gold" else "999",
+                fetched_at=datetime.now(),
+                is_stale=False,
+            ))
+
     def fetch_and_save(self) -> Tuple[Optional[MetalRate], Optional[MetalRate], str]:
         """Returns (gold_rate, silver_rate, message)."""
+        from app.config import get_config
+        if not get_config().rate_api_key:
+            return None, None, "No API key set — enter today's rates manually."
         provider = _get_provider()
         try:
             rates = provider.fetch_all()
@@ -66,7 +89,7 @@ class RateService:
             if silver:
                 message += f"Silver: ₹{silver.rate_per_gram}/g"
             if not gold and not silver:
-                message = "No rates fetched"
+                message = "Could not fetch live rates (offline?) — enter rates manually."
 
         return gold, silver, message.strip()
 
@@ -81,9 +104,12 @@ class RateService:
             )
             if not row:
                 return None
-            is_stale = (
-                datetime.now() - row.fetched_at
-            ) > timedelta(minutes=STALE_THRESHOLD_MINUTES)
+            limit = (
+                timedelta(hours=MANUAL_STALE_THRESHOLD_HOURS)
+                if row.source == "manual"
+                else timedelta(minutes=STALE_THRESHOLD_MINUTES)
+            )
+            is_stale = (datetime.now() - row.fetched_at) > limit
             return {
                 "metal_type": row.metal_type,
                 "rate_per_gram": row.rate_per_gram,

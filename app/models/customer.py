@@ -76,7 +76,7 @@ class KYCDocument(Base, TimestampMixin):
     doc_ref_encrypted: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     file_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
-    uploaded_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, server_default=func.now())
     uploaded_by: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("users.id"), nullable=True
     )
