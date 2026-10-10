@@ -58,6 +58,11 @@ def generate_repayment_receipt(repayment: dict, loan: dict, customer: dict, path
         "ReceiptTitle", fontSize=16, fontName="Helvetica-Bold", textColor=GOLD,
         alignment=TA_CENTER, spaceBefore=8, spaceAfter=4
     )))
+    if repayment.get("is_reversed"):
+        elements.append(Paragraph("*** REVERSED — NOT VALID ***", ParagraphStyle(
+            "Reversed", fontSize=14, fontName="Helvetica-Bold", textColor=colors.red,
+            alignment=TA_CENTER, spaceAfter=6
+        )))
     elements.append(Paragraph(
         f"Receipt No: <b>{repayment.get('receipt_number')}</b>  |  "
         f"Date: <b>{fmt_date(repayment.get('payment_date'))}</b>",
@@ -88,20 +93,23 @@ def generate_repayment_receipt(repayment: dict, loan: dict, customer: dict, path
         ["Fee Paid", fmt_currency(repayment.get("fee_paid", 0))],
         ["Penalty Paid", fmt_currency(repayment.get("penalty_paid", 0))],
         ["TOTAL PAID", fmt_currency(repayment.get("total_paid", 0))],
-        ["Remaining Balance", fmt_currency(repayment.get("balance_principal_after", 0))],
+        ["Remaining Principal", fmt_currency(repayment.get("balance_principal_after", 0))],
+        ["Remaining Total Due", fmt_currency(
+            repayment.get("total_outstanding_after", repayment.get("balance_principal_after", 0))
+        )],
     ]
     pt = Table(pay_data, colWidths=[10*cm, 9*cm])
     pt.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), DARK),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTNAME", (0, -2), (-1, -1), "Helvetica-Bold"),
-        ("BACKGROUND", (0, -2), (-1, -2), LIGHT_BG),
+        ("FONTNAME", (0, -3), (-1, -1), "Helvetica-Bold"),
+        ("BACKGROUND", (0, -3), (-1, -3), LIGHT_BG),
         ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#D4EDDA")),
         ("FONTSIZE", (0, 0), (-1, -1), 10),
         ("ALIGN", (1, 0), (1, -1), "RIGHT"),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.lightgrey),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -3), [colors.white, colors.HexColor("#FAFAFA")]),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -4), [colors.white, colors.HexColor("#FAFAFA")]),
         ("TOPPADDING", (0, 0), (-1, -1), 5),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
     ]))

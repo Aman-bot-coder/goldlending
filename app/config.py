@@ -28,9 +28,10 @@ DB_DIR = _BASE_DIR / "database"
 BACKUP_DIR = _BASE_DIR / "backups"
 UPLOAD_DIR = _BASE_DIR / "uploads"
 LOG_DIR = _BASE_DIR / "logs"
+RECEIPT_DIR = _BASE_DIR / "receipts"
 
 # Create required directories
-for _d in [_BASE_DIR, DB_DIR, BACKUP_DIR, UPLOAD_DIR, LOG_DIR]:
+for _d in [_BASE_DIR, DB_DIR, BACKUP_DIR, UPLOAD_DIR, LOG_DIR, RECEIPT_DIR]:
     _d.mkdir(parents=True, exist_ok=True)
 
 _DEFAULT_CONFIG: dict = {

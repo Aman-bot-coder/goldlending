@@ -184,11 +184,23 @@ class RepaymentDialog(QDialog):
             notes=self.notes.text().strip(),
         )
         if ok:
-            QMessageBox.information(
+            from app.ui.loan_actions import open_receipt, release_collateral
+            reply = QMessageBox.question(
                 self, "Payment Collected",
-                f"{msg}\n\nReceipt: {result['receipt_number']}\n"
-                f"Balance: {fmt_currency(result['balance_after'])}"
+                f"{msg}\nBalance due: {fmt_currency(result['balance_after'])}\n\n"
+                "Open the receipt to print / share?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
+            if reply == QMessageBox.StandardButton.Yes:
+                open_receipt(result["id"], self)
+            if result.get("loan_closed") and session.can("release_collateral"):
+                ask = QMessageBox.question(
+                    self, "Loan Closed",
+                    "This loan is now fully repaid.\n\nRelease the pledged collateral to the customer now?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                )
+                if ask == QMessageBox.StandardButton.Yes:
+                    release_collateral(self.loan_id, self, ask=False)
             self.accept()
         else:
             QMessageBox.warning(self, "Error", msg)

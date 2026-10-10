@@ -8,6 +8,7 @@ from typing import Optional, List, Tuple
 from sqlalchemy import or_
 
 from app.database.connection import get_session
+from app.services.audit_service import audit
 from app.models.customer import Customer, KYCDocument
 from app.utils.security import encrypt_field, decrypt_field
 
@@ -68,6 +69,7 @@ class CustomerService:
             cid = customer.id
             cust_id_str = customer.customer_id
 
+        audit("CUSTOMER_CREATED", "customer", cid, cust_id_str, new_value={"name": full_name, "mobile": mobile}, user_id=created_by)
         return True, "Customer created successfully", {"id": cid, "customer_id": cust_id_str}
 
     def update_customer(self, customer_id: int, updated_by: int, **kwargs) -> Tuple[bool, str]:
@@ -89,6 +91,8 @@ class CustomerService:
                 if key in allowed_fields:
                     setattr(customer, key, val)
 
+        audit("CUSTOMER_UPDATED", "customer", customer_id,
+              new_value={k: v for k, v in kwargs.items() if k != "kyc_ref"}, user_id=updated_by)
         return True, "Customer updated"
 
     def verify_kyc(
@@ -105,6 +109,7 @@ class CustomerService:
             customer.kyc_verified_at = datetime.now()
             if status == "rejected":
                 customer.kyc_rejection_reason = reason
+        audit(f"KYC_{status.upper()}", "customer", customer_id, extra=reason or None, user_id=verified_by)
         return True, f"KYC {status}"
 
     def get_customer(self, customer_id: int) -> Optional[dict]:

@@ -304,6 +304,8 @@ class MainWindow(QMainWindow):
             pass
 
     def _logout(self):
+        from app.services.audit_service import audit
+        audit("LOGOUT", "user", app_session.user_id, app_session.username)
         app_session.logout()
         self._timeout_timer.stop()
         self._rates_timer.stop()

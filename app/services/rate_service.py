@@ -53,6 +53,8 @@ class RateService:
                 fetched_at=datetime.now(),
                 is_stale=False,
             ))
+        from app.services.audit_service import audit
+        audit("RATE_SET_MANUAL", "rate", extra=f"{metal_type} ₹{rate}/g")
 
     def fetch_and_save(self) -> Tuple[Optional[MetalRate], Optional[MetalRate], str]:
         """Returns (gold_rate, silver_rate, message)."""

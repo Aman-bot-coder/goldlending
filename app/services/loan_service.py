@@ -13,10 +13,21 @@ from sqlalchemy import and_, or_
 
 from app.config import get_config
 from app.database.connection import get_session
+from app.services.audit_service import audit
 from app.models.collateral import CollateralItem
 from app.models.loan import Loan, LoanStatusHistory
 
 logger = logging.getLogger(__name__)
+
+OPEN_STATUSES = ("active", "partially_repaid", "overdue", "auction_review")
+
+
+def _overdue_clause():
+    today = date.today()
+    return or_(
+        Loan.status.in_(("overdue", "auction_review")),
+        and_(Loan.maturity_date < today, Loan.status.in_(("active", "partially_repaid"))),
+    )
 
 
 def _next_loan_number(session) -> str:
@@ -133,6 +144,9 @@ class LoanService:
             loan_id = loan.id
             self._add_status_history(session, loan_id, None, "draft", created_by)
 
+        audit("LOAN_CREATED", "loan", loan_id, loan_number,
+              new_value={"principal": principal_amount, "rate": interest_rate, "tenure": tenure_days},
+              user_id=created_by)
         return True, f"Loan {loan_number} created", loan_id
 
     def add_collateral(
@@ -204,6 +218,8 @@ class LoanService:
                 )
                 loan.total_collateral_value = existing
 
+        audit("COLLATERAL_ADDED", "collateral", item_id, tag_number,
+              new_value={"loan_id": loan_id, "metal": metal_type, "net_wt": net_weight, "purity": purity})
         return True, "Collateral added", item_id
 
     def approve_loan(self, loan_id: int, approved_by: int, approved_amount: Decimal, remarks: str = "") -> Tuple[bool, str]:
@@ -220,6 +236,7 @@ class LoanService:
             old_status = loan.status
             loan.status = "approved"
             self._add_status_history(session, loan_id, old_status, "approved", approved_by, remarks)
+        audit("LOAN_APPROVED", "loan", loan_id, new_value={"amount": approved_amount}, user_id=approved_by)
         return True, "Loan approved"
 
     def disburse_loan(self, loan_id: int, disbursed_by: int, disbursement_date: Optional[date] = None) -> Tuple[bool, str]:
@@ -236,6 +253,7 @@ class LoanService:
             loan.outstanding_principal = loan.disbursed_amount
             loan.maturity_date = disburse_date + timedelta(days=loan.tenure_days)
             self._add_status_history(session, loan_id, "approved", "active", disbursed_by)
+        audit("LOAN_DISBURSED", "loan", loan_id, user_id=disbursed_by)
         return True, "Loan disbursed"
 
     def get_loan(self, loan_id: int) -> Optional[dict]:
@@ -273,10 +291,7 @@ class LoanService:
             if customer_id:
                 q = q.filter(Loan.customer_id == customer_id)
             if overdue_only:
-                today = date.today()
-                q = q.filter(
-                    and_(Loan.maturity_date < today, Loan.status.in_(["active", "partially_repaid"]))
-                )
+                q = q.filter(_overdue_clause())
             loans = q.order_by(Loan.created_at.desc()).limit(limit).offset(offset).all()
             return [self._to_dict(lo, session) for lo in loans]
 
@@ -285,13 +300,9 @@ class LoanService:
             from app.models.customer import Customer
             from app.models.repayment import Repayment
             total_customers = session.query(Customer).filter(Customer.is_active == True).count()
-            active_loans = session.query(Loan).filter(
-                Loan.status.in_(["active", "partially_repaid", "overdue"])
-            ).count()
+            active_loans = session.query(Loan).filter(Loan.status.in_(OPEN_STATUSES)).count()
             today = date.today()
-            overdue = session.query(Loan).filter(
-                and_(Loan.maturity_date < today, Loan.status.in_(["active", "partially_repaid"]))
-            ).count()
+            overdue = session.query(Loan).filter(_overdue_clause()).count()
             due_soon = session.query(Loan).filter(
                 and_(
                     Loan.maturity_date >= today,
@@ -302,10 +313,11 @@ class LoanService:
             from sqlalchemy import func
             principal_outstanding = session.query(
                 func.coalesce(func.sum(Loan.outstanding_principal), 0)
-            ).filter(Loan.status.in_(["active", "partially_repaid", "overdue"])).scalar()
+            ).filter(Loan.status.in_(OPEN_STATUSES)).scalar()
+            # Renewals re-use the original money, so only count first-time disbursements.
             total_disbursed = session.query(
                 func.coalesce(func.sum(Loan.disbursed_amount), 0)
-            ).filter(Loan.status != "draft").scalar()
+            ).filter(Loan.parent_loan_id.is_(None)).scalar()
             total_repayments = session.query(
                 func.coalesce(func.sum(Repayment.total_paid), 0)
             ).filter(Repayment.is_reversed == False).scalar()
@@ -342,6 +354,133 @@ class LoanService:
                 loan.status = "overdue"
                 self._add_status_history(session, loan.id, old, "overdue", None, "Auto-marked overdue")
             return len(loans)
+
+    def release_collateral(self, loan_id: int, released_by: int) -> Tuple[bool, str]:
+        """Hand pledged items back to the customer once the loan is fully closed."""
+        with get_session() as session:
+            loan = session.get(Loan, loan_id)
+            if not loan:
+                return False, "Loan not found"
+            if loan.status != "closed":
+                return False, "Collateral can only be released after the loan is fully repaid (closed)"
+            items = [i for i in loan.collateral_items if not i.is_released]
+            if not items:
+                return False, "All collateral for this loan has already been released"
+            for item in items:
+                item.is_released = True
+                item.release_date = date.today()
+                item.release_authorized_by = released_by
+            count, number = len(items), loan.loan_number
+        audit("COLLATERAL_RELEASED", "loan", loan_id, number, extra=f"{count} item(s)")
+        return True, f"{count} item(s) released to the customer for loan {number}"
+
+    def renew_loan(
+        self,
+        loan_id: int,
+        renewed_by: int,
+        tenure_days: int,
+        interest_rate: Optional[Decimal] = None,
+    ) -> Tuple[bool, str, Optional[int]]:
+        """
+        Close the loan as 'renewed' and open a new loan for the full amount due
+        (principal + unpaid interest/penalty), moving the same collateral across.
+        """
+        from app.services.repayment_service import calculate_outstanding
+        if tenure_days <= 0:
+            return False, "Tenure must be at least 1 day", None
+        with get_session() as session:
+            old = session.get(Loan, loan_id)
+            if not old:
+                return False, "Loan not found", None
+            if old.status not in ("active", "partially_repaid", "overdue"):
+                return False, f"Cannot renew a loan in status '{old.status}'", None
+            items = [i for i in old.collateral_items if not i.is_released]
+            if not items:
+                return False, "Loan has no pledged collateral to carry over", None
+
+            today = date.today()
+            due = calculate_outstanding(old, today)["total_outstanding"]
+            if due <= 0:
+                return False, "Nothing is outstanding on this loan", None
+
+            collateral_value = sum((i.indicative_value or Decimal("0")) for i in items)
+            max_ltv = Decimal(str(get_config().max_ltv_percentage))
+            if collateral_value > 0:
+                ltv = (due / collateral_value * Decimal("100")).quantize(Decimal("0.01"))
+                if ltv > max_ltv:
+                    return False, (
+                        f"Renewal amount ₹{due} is {ltv}% of collateral value (max {max_ltv}%). "
+                        "Collect some payment first."
+                    ), None
+            else:
+                ltv = None
+
+            new = Loan(
+                loan_number=_next_loan_number(session),
+                customer_id=old.customer_id,
+                status="active",
+                principal_amount=due,
+                approved_amount=due,
+                disbursed_amount=due,
+                outstanding_principal=due,
+                outstanding_interest=Decimal("0"),
+                total_outstanding=due,
+                interest_rate=interest_rate if interest_rate is not None else old.interest_rate,
+                interest_method=old.interest_method,
+                tenure_days=tenure_days,
+                disbursement_date=today,
+                maturity_date=today + timedelta(days=tenure_days),
+                ltv_percentage=ltv,
+                total_collateral_value=collateral_value,
+                payment_mode=old.payment_mode,
+                approved_by=renewed_by,
+                approved_at=datetime.now(),
+                remarks=f"Renewal of {old.loan_number}",
+                renewal_count=(old.renewal_count or 0) + 1,
+                parent_loan_id=old.id,
+                created_by=renewed_by,
+            )
+            session.add(new)
+            session.flush()
+            for item in items:
+                item.loan = new
+
+            old_status = old.status
+            old.status = "renewed"
+            old.outstanding_principal = Decimal("0")
+            old.outstanding_interest = Decimal("0")
+            old.total_outstanding = Decimal("0")
+            self._add_status_history(session, old.id, old_status, "renewed", renewed_by,
+                                     f"Renewed as {new.loan_number}")
+            self._add_status_history(session, new.id, None, "active", renewed_by,
+                                     f"Renewal of {old.loan_number}")
+            new_id, new_number, old_number = new.id, new.loan_number, old.loan_number
+
+        audit("LOAN_RENEWED", "loan", loan_id, old_number,
+              new_value={"new_loan": new_number, "amount": due, "tenure_days": tenure_days})
+        return True, f"Loan {old_number} renewed as {new_number} for ₹{due}", new_id
+
+    def set_auction_review(self, loan_id: int, user_id: int, flag: bool, remarks: str = "") -> Tuple[bool, str]:
+        with get_session() as session:
+            loan = session.get(Loan, loan_id)
+            if not loan:
+                return False, "Loan not found"
+            if flag:
+                matured = loan.maturity_date and loan.maturity_date < date.today()
+                if not (loan.status == "overdue" or (matured and loan.status in ("active", "partially_repaid"))):
+                    return False, "Only overdue loans can be moved to auction review"
+                new_status = "auction_review"
+            else:
+                if loan.status != "auction_review":
+                    return False, "Loan is not under auction review"
+                new_status = "overdue"
+            old = loan.status
+            loan.status = new_status
+            self._add_status_history(session, loan_id, old, new_status, user_id, remarks)
+            number = loan.loan_number
+        audit("AUCTION_REVIEW_ON" if flag else "AUCTION_REVIEW_OFF", "loan", loan_id, number, extra=remarks)
+        return True, (f"Loan {number} moved to auction review" if flag
+                      else f"Loan {number} removed from auction review")
 
     def _add_status_history(
         self, session, loan_id: int, from_status, to_status: str,

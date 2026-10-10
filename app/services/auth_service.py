@@ -11,6 +11,7 @@ from typing import Optional, Tuple
 from sqlalchemy.orm import Session
 
 from app.database.connection import get_session
+from app.services.audit_service import audit
 from app.models.user import User, LoginHistory
 from app.utils.security import (
     hash_password, verify_password, needs_rehash,
@@ -90,6 +91,7 @@ class AuthService:
             from sqlalchemy.orm import make_transient
             make_transient(user)
 
+        audit("LOGIN", "user", user.id, user.username, username=user.username, user_id=user.id)
         return True, "Login successful", user
 
     def _log_attempt(
@@ -121,6 +123,7 @@ class AuthService:
                 return False, "Current password is incorrect"
             user.password_hash = hash_password(new_password)
             user.must_change_password = False
+        audit("PASSWORD_CHANGED", "user", user_id, user_id=user_id)
         return True, "Password changed successfully"
 
     def admin_reset_password(self, admin_id: int, target_user_id: int) -> Tuple[bool, str, str]:
@@ -134,6 +137,7 @@ class AuthService:
             temp_pw = generate_temp_password()
             target.password_hash = hash_password(temp_pw)
             target.must_change_password = True
+        audit("PASSWORD_RESET", "user", target_user_id, user_id=admin_id)
         return True, "Password reset. User must change on next login.", temp_pw
 
     # ------------------------------------------------------------------ users
@@ -180,6 +184,7 @@ class AuthService:
             from sqlalchemy.orm import make_transient
             make_transient(user)
 
+        audit("USER_CREATED", "user", user.id, user.username, new_value={"role": role}, user_id=admin_id)
         return True, f"User created. Temporary password: {temp_pw}", user
 
     def update_user(self, admin_id: int, user_id: int, **kwargs) -> Tuple[bool, str]:
@@ -194,6 +199,7 @@ class AuthService:
             for key, val in kwargs.items():
                 if key in allowed:
                     setattr(user, key, val)
+        audit("USER_UPDATED", "user", user_id, new_value=kwargs, user_id=admin_id)
         return True, "User updated"
 
     def list_users(self) -> list[dict]:

@@ -64,11 +64,23 @@ class RepaymentsPage(QWidget):
 
         # Table
         self.table = DataTable(
-            ["Receipt #", "Loan #", "Customer", "Total Paid", "Principal", "Interest",
-             "Mode", "Date", "Collected By"],
+            ["ID", "Receipt #", "Loan #", "Customer", "Total Paid", "Principal", "Interest",
+             "Penalty", "Mode", "Date", "Collected By", "Status"],
             searchable=False,
         )
+        self.table.row_double_clicked.connect(lambda _r: self._print_receipt())
         layout.addWidget(self.table)
+
+        btn_row = QHBoxLayout()
+        receipt_btn = QPushButton("🧾 Print Receipt")
+        receipt_btn.clicked.connect(self._print_receipt)
+        btn_row.addWidget(receipt_btn)
+        reverse_btn = QPushButton("↩ Reverse Payment")
+        reverse_btn.setObjectName("SecondaryBtn")
+        reverse_btn.clicked.connect(self._reverse_payment)
+        btn_row.addWidget(reverse_btn)
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
 
     def refresh(self):
         try:
@@ -87,11 +99,10 @@ class RepaymentsPage(QWidget):
                     .join(Loan, Repayment.loan_id == Loan.id)
                     .join(Customer, Loan.customer_id == Customer.id)
                     .outerjoin(User, Repayment.created_by == User.id)
-                    .filter(Repayment.is_reversed == False)
                 )
                 if mode != "All":
                     q = q.filter(Repayment.payment_mode == mode)
-                results = q.order_by(Repayment.payment_date.desc()).limit(500).all()
+                results = q.order_by(Repayment.payment_date.desc(), Repayment.id.desc()).limit(500).all()
 
                 rows = []
                 total = 0
@@ -101,21 +112,60 @@ class RepaymentsPage(QWidget):
                     cn = cust.full_name or ""
                     if search and search not in ln.lower() and search not in rn.lower() and search not in cn.lower():
                         continue
-                    total += float(rep.total_paid or 0)
+                    if not rep.is_reversed:
+                        total += float(rep.total_paid or 0)
                     rows.append([
-                        rn, ln, cn,
+                        rep.id, rn, ln, cn,
                         fmt_currency(rep.total_paid),
                         fmt_currency(rep.principal_paid),
                         fmt_currency(rep.interest_paid),
+                        fmt_currency(rep.penalty_paid),
                         (rep.payment_mode or "").replace("_", " ").title(),
                         fmt_date(rep.payment_date),
                         usr.username if usr else "—",
+                        "Reversed" if rep.is_reversed else "Valid",
                     ])
 
             self.table.load_data(rows)
             self.total_lbl.setText(f"Total: {fmt_currency(total)}")
         except Exception as exc:
             self.total_lbl.setText(f"Error: {exc}")
+
+    def _selected_id(self):
+        row = self.table.get_selected_row_data()
+        if not row:
+            QMessageBox.warning(self, "No Selection", "Select a payment first.")
+            return None
+        return int(row[0])
+
+    def _print_receipt(self):
+        rid = self._selected_id()
+        if rid is not None:
+            from app.ui.loan_actions import open_receipt
+            open_receipt(rid, self)
+
+    def _reverse_payment(self):
+        from PySide6.QtWidgets import QInputDialog
+        from app.services.repayment_service import get_repayment_service
+        from app.ui.session_state import session
+        if not session.is_admin:
+            QMessageBox.warning(self, "Access Denied", "Only an admin can reverse payments.")
+            return
+        rid = self._selected_id()
+        if rid is None:
+            return
+        reason, ok = QInputDialog.getText(self, "Reverse Payment", "Reason for reversal (required):")
+        if not ok:
+            return
+        if not reason.strip():
+            QMessageBox.warning(self, "Reason Required", "Please enter a reason for the reversal.")
+            return
+        ok, msg = get_repayment_service().reverse_payment(rid, session.user_id, reason)
+        if ok:
+            QMessageBox.information(self, "Reversed", msg)
+            self.refresh()
+        else:
+            QMessageBox.warning(self, "Cannot Reverse", msg)
 
     def _collect_payment(self):
         from PySide6.QtWidgets import QInputDialog

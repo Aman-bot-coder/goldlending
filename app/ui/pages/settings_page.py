@@ -129,17 +129,6 @@ class SettingsPage(QWidget):
         session_form.addRow("Session Timeout:", self.session_timeout)
         layout.addWidget(session_grp)
 
-        # Theme
-        ui_grp = QGroupBox("Appearance")
-        ui_form = QFormLayout(ui_grp)
-        self.theme = QComboBox()
-        self.theme.addItems(["light", "dark"])
-        idx = self.theme.findText(cfg.theme)
-        if idx >= 0:
-            self.theme.setCurrentIndex(idx)
-        ui_form.addRow("Theme:", self.theme)
-        layout.addWidget(ui_grp)
-
         # Save button
         btn_row = QHBoxLayout()
         btn_row.addStretch()
@@ -176,6 +165,7 @@ class SettingsPage(QWidget):
             "rate_api_key": self.api_key.text().strip(),
             "rate_refresh_interval_minutes": self.rate_interval.value(),
             "session_timeout_minutes": self.session_timeout.value(),
-            "theme": self.theme.currentText(),
         })
+        from app.services.audit_service import audit
+        audit("SETTINGS_CHANGED", "settings")
         QMessageBox.information(self, "Saved", "Settings saved. Some changes take effect on next launch.")

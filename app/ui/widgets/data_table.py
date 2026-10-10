@@ -107,6 +107,8 @@ class DataTable(QWidget):
             for col_idx, cell in enumerate(row_data):
                 item = QTableWidgetItem(str(cell) if cell is not None else "")
                 item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+                # Remember the source row so sorting the view never mixes up selections.
+                item.setData(Qt.ItemDataRole.UserRole, start + row_idx)
                 self.table.setItem(row_idx, col_idx, item)
         self.table.setSortingEnabled(True)
 
@@ -129,23 +131,32 @@ class DataTable(QWidget):
             self._current_page += 1
             self._render()
 
+    def _source_row(self, view_row: int) -> Optional[int]:
+        item = self.table.item(view_row, 0)
+        if item is None:
+            return None
+        src = item.data(Qt.ItemDataRole.UserRole)
+        return int(src) if src is not None else None
+
     def _on_double_click(self, index):
-        actual_row = self._current_page * self.page_size + index.row()
-        self.row_double_clicked.emit(actual_row)
+        src = self._source_row(index.row())
+        if src is not None:
+            self.row_double_clicked.emit(src)
 
     def _on_selection(self):
         rows = self.table.selectedIndexes()
         if rows:
-            actual_row = self._current_page * self.page_size + rows[0].row()
-            self.row_selected.emit(actual_row)
+            src = self._source_row(rows[0].row())
+            if src is not None:
+                self.row_selected.emit(src)
 
     def get_selected_row_data(self) -> Optional[List]:
         rows = self.table.selectedIndexes()
         if not rows:
             return None
-        actual_row = self._current_page * self.page_size + rows[0].row()
-        if actual_row < len(self._filtered_data):
-            return self._filtered_data[actual_row]
+        src = self._source_row(rows[0].row())
+        if src is not None and src < len(self._filtered_data):
+            return self._filtered_data[src]
         return None
 
     def clear(self):

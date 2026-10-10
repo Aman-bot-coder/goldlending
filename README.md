@@ -5,7 +5,9 @@ A complete, production-ready Windows desktop application for collateral-based go
 ## Features
 - Works 100% offline — local database created automatically on first launch
 - Manual daily gold/silver rate entry (optional live rates via goldapi.io when online)
-- Complete loan origination → disbursement → repayment lifecycle
+- Complete loan lifecycle: origination → approval → disbursement → repayment → closure → collateral release
+- Loan renewal (collateral carried over) and auction review for overdue loans
+- Printable PDF payment receipts; admin-only payment reversal with reason
 - Customer onboarding with encrypted KYC
 - Role-based access (Admin / Lender / Viewer)
 - PDF receipts and Excel reports

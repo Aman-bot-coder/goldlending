@@ -131,6 +131,8 @@ class BackupPage(QWidget):
             size_kb = max(1, dest.stat().st_size // 1024)
             self._status(f"✅ Backup saved: {dest} ({size_kb} KB)", True)
             self._log_backup(str(dest), dest.stat().st_size, "success", None)
+            from app.services.audit_service import audit
+            audit("BACKUP_EXPORTED", "backup", extra=str(dest))
         except Exception as exc:
             self._status(f"❌ Backup failed: {exc}", False)
             self._log_backup(path, None, "failed", str(exc))
@@ -180,6 +182,8 @@ class BackupPage(QWidget):
         except Exception as exc:
             QMessageBox.critical(self, "Restore Failed", str(exc))
             return
+        from app.services.audit_service import audit
+        audit("DATA_RESTORED", "backup", extra=os.path.basename(path))
         QMessageBox.information(
             self, "Restore Complete",
             "Data restored successfully. You will now be logged out — please sign in again.",

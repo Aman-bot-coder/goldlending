@@ -28,7 +28,10 @@ class AuditService:
         extra: Optional[str] = None,
     ) -> None:
         try:
-            with get_session() as session:
+            # Own session so an audit write never commits/closes a caller's transaction.
+            from sqlalchemy.orm import Session
+            from app.database.connection import get_engine
+            with Session(get_engine()) as session, session.begin():
                 log = AuditLog(
                     user_id=user_id,
                     username=username,
@@ -93,3 +96,29 @@ def get_audit_service() -> AuditService:
     if _audit_service is None:
         _audit_service = AuditService()
     return _audit_service
+
+
+def audit(
+    action: str,
+    entity_type: Optional[str] = None,
+    entity_id: Optional[int] = None,
+    entity_ref: Optional[str] = None,
+    old_value: Optional[dict] = None,
+    new_value: Optional[dict] = None,
+    extra: Optional[str] = None,
+    username: Optional[str] = None,
+    user_id: Optional[int] = None,
+) -> None:
+    """Record an action by the currently signed-in user. Never raises."""
+    from app.ui.session_state import session as app_session
+    get_audit_service().log(
+        action,
+        user_id=user_id if user_id is not None else app_session.user_id,
+        username=username or app_session.username,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        entity_ref=entity_ref,
+        old_value=old_value,
+        new_value=new_value,
+        extra=extra,
+    )
